@@ -13,7 +13,7 @@ namespace LD06_Driver
         SerialPort _serialPort;
         private static int frameCounter = 0;
         public static LidarPacket lidarPacket;
-        
+
         /// <summary>
         /// Angle at which processing and logging begins
         /// </summary>

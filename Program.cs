@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Linq;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace LD06_Driver
 {
@@ -15,19 +16,19 @@ namespace LD06_Driver
         static Queue<PointData> _pointDatas;
 
         public static void Main()
-        {           
+        {
 
             // Create a new SerialPort object with default settings.
             _serialPort = new SerialPort();
 
             // Allow the user to set the appropriate properties.
-            _serialPort.PortName = "COM5";
+            _serialPort.PortName = "COM5";//"/dev/ttyUSB0";
             _serialPort.BaudRate = 230400;
             _serialPort.Parity = Parity.None;
             _serialPort.DataBits = 8;
             _serialPort.StopBits = StopBits.One;
             _serialPort.Handshake = Handshake.None;
-            _serialPort.ReadBufferSize = 10000;
+            _serialPort.ReadBufferSize = 2000;
 
             // Set the read/write timeouts
             _serialPort.ReadTimeout = 500;
@@ -51,15 +52,19 @@ namespace LD06_Driver
 
             while (_continue)
             {
+                //Console.WriteLine("Hello world!");
+
                 //var message = Console.ReadLine();
-                if(_pointDatas.Count > 0)
+                while (_pointDatas.Count > 0)
                 {
                     PointData point;
 
-                    lock (_pointDatas)  point = _pointDatas.Dequeue();
+                    lock (_pointDatas) point = _pointDatas.Dequeue();
 
                     if (point != null && (point.angle < 70 || point.angle > 290)) Console.WriteLine(point.angle.ToString("0.##") + " " + point.distance + " " + point.confidence);
                 }
+
+                Task.Delay(1).Wait();
             }
 
             lidarReaderThread.Join();
