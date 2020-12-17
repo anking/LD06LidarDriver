@@ -14,16 +14,6 @@ namespace LD06_Driver
         private static int frameCounter = 0;
         public static LidarPacket lidarPacket;
 
-        /// <summary>
-        /// Angle at which processing and logging begins
-        /// </summary>
-        public int StartAngle { get; set; }
-
-        /// <summary>
-        /// Angle at which processing and logging stops
-        /// </summary>
-        public int StopAngle { get; set; }
-
         Queue<PointData> outputQueue;
         int outputQueueSize = 360;
 
@@ -226,7 +216,7 @@ namespace LD06_Driver
                             //Debug output
                             if (lidarPacket != null && crcCalculated == lidarPacket.crcCheck)
                             {
-                                lidarPacket.CalculateAngles(StartAngle, StopAngle);
+                                lidarPacket.CalculateAngles();
 
                                 //Console.WriteLine("Data Length: " + lidarPacket.dataLength);
                                 //Console.WriteLine("Speed deg/sec: " + lidarPacket.radarSpeed);
@@ -306,7 +296,7 @@ namespace LD06_Driver
             return crc;
         }
 
-        public void CalculateAngles(int startAngleSetting, int stopAngleSetting)
+        public void CalculateAngles()
         {
             pointData = new List<PointData>();
 
@@ -322,6 +312,7 @@ namespace LD06_Driver
                 newPoint.distance |= data[i * 3 + 1] << 8;
                 newPoint.confidence = data[i * 3 + 2];
                 newPoint.angle = ((float)startAngle / 100) + step * i;
+                newPoint.timestamp = timestamp;
 
                 pointData.Add(newPoint);
             }
@@ -333,5 +324,6 @@ namespace LD06_Driver
         public double angle;
         public int distance;
         public int confidence;
+        public int timestamp;
     }
 }
