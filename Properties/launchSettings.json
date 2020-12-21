@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "LD06_Driver": {
+      "commandName": "Project",
+      "commandLineArgs": "-p COM5 -s 290 -e 70"
+    }
+  }
+}

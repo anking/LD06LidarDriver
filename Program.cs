@@ -83,6 +83,9 @@ namespace LD06_Driver
                         throw new Exception("Params not set");
                     });
 
+                //Console start message
+                Console.WriteLine("Lidar on port# " + _serialPort.PortName + ", Baudrate: " + _serialPort.BaudRate + ", Start Angle: " + _startAngle + ", End Angle: " + _endAngle);
+
                 //calculate zone statring/ending angles
                 var areaWidth = (_startAngle > _endAngle ? (360 - _startAngle) + _endAngle : _endAngle - _startAngle) / 4;
                 zone1Start = _startAngle;
