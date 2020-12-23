@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO.Ports;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace LD06_Driver
@@ -48,7 +49,9 @@ namespace LD06_Driver
         public LD06Driver(SerialPort port)
         {
             _serialPort = port;
-            READ_BUFFER_SIZE = _serialPort.ReadBufferSize;
+
+            //have to correct size for linux(buffer size minus one byte)
+            READ_BUFFER_SIZE = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? _serialPort.ReadBufferSize - 1 : _serialPort.ReadBufferSize;
         }
 
         public void AddQueue(Queue<PointData> queue, int size)

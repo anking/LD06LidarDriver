@@ -7,14 +7,19 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using CommandLine;
+using LD06_Driver.Communication;
+using Newtonsoft.Json;
 
 namespace LD06_Driver
 {
     class Program
     {
+        const int SYNC_INCOMING_BUFFER_SIZE = 10000; //Size of incoming buffer for the connection with node32
+
         static SerialPort _serialPort;
         static bool _continue;
         static Queue<PointData> _pointDatas;
+        static Queue<PointData> _pointDatasToSend;
         static int _startAngle = 0;
         static int _endAngle = 360;
 
@@ -34,6 +39,15 @@ namespace LD06_Driver
         static double zone2Distance;
         static double zone3Distance;
         static double zone4Distance;
+
+        // f9p socket for interapplication communication with node express server
+        static AsyncSocket _syncDataSocket;
+
+        private const string SyncDataSocketLocation = "/tmp/lidar-sync-data.sock"; //location of the interprocess socket(used to communicate with nodejs server)
+
+        //initialize buffer for sync channel
+        byte[] _syncInBuffer = new byte[SYNC_INCOMING_BUFFER_SIZE];
+
 
 
         public class CommandLineOptions
@@ -86,6 +100,9 @@ namespace LD06_Driver
                 //Console start message
                 Console.WriteLine("Lidar on port# " + _serialPort.PortName + ", Baudrate: " + _serialPort.BaudRate + ", Start Angle: " + _startAngle + ", End Angle: " + _endAngle);
 
+                //Connect sync socket
+                _syncDataSocket = new AsyncSocket(SyncDataSocketLocation).Connect();
+
                 //calculate zone statring/ending angles
                 var areaWidth = (_startAngle > _endAngle ? (360 - _startAngle) + _endAngle : _endAngle - _startAngle) / 4;
                 zone1Start = _startAngle;
@@ -97,11 +114,14 @@ namespace LD06_Driver
                 zone3End = zone3Start + areaWidth > 360 ? zone3Start + areaWidth - 360 : zone3Start + areaWidth;
                 zone4End = zone4Start + areaWidth > 360 ? zone4Start + areaWidth - 360 : zone4Start + areaWidth;
 
+                Console.WriteLine("z3s" + zone3Start + "/" + zone3End);
+
                 _serialPort.Open();
 
                 LD06Driver lidarDriver = new LD06Driver(_serialPort);
 
                 _pointDatas = new Queue<PointData>();
+                _pointDatasToSend = new Queue<PointData>();
 
                 //create a que of fixed size to store data points
                 lidarDriver.AddQueue(_pointDatas, 10000);
@@ -109,13 +129,17 @@ namespace LD06_Driver
                 //Read lidar thread
                 Thread lidarReaderThread = new Thread(lidarDriver.ReadLidarData);
 
-                //Clean Expired data points
-                Thread cleanDataPoints = new Thread(calculateZoneRanges);
+                //Send Range calculation results to UI
+                Thread calculateZoneRangesThread = new Thread(calculateZoneRanges);
+
+                //Send individual points to UI
+                Thread sendPointInfoThread = new Thread(sendPointInfo);
 
                 _continue = true;
 
                 lidarReaderThread.Start();
-                cleanDataPoints.Start();
+                calculateZoneRangesThread.Start();
+                sendPointInfoThread.Start();
 
                 while (_continue)
                 {
@@ -123,11 +147,15 @@ namespace LD06_Driver
                     {
                         PointData point;
 
-                        lock (_pointDatas) point = _pointDatas.Dequeue();
-
+                        lock (_pointDatas) point = _pointDatas.Dequeue();                       
+                        
                         if(point != null)
                         {
-                            //select only point within my range
+                            //send point into the UI
+                            //Task.Run(()=>_syncDataSocket.SendLine("POINT:" + JsonConvert.SerializeObject(point)));
+                            _pointDatasToSend.Enqueue(point);
+
+                            //Put individual point in their proper range group(4 ranges total)
                             if (point.angle <= _endAngle || point.angle >= _startAngle)
                             {
                                 if (point.angle >= zone1Start && point.angle < zone1End)
@@ -144,7 +172,11 @@ namespace LD06_Driver
                                         zone2.Add(point);
                                     }
                                 }
-                                else if (point.angle >= zone3Start && point.angle < zone3End)
+                                else if (
+                                    zone3Start > zone3End
+                                    ? point.angle >= zone3Start || point.angle < zone3End
+                                    : point.angle >= zone3Start && point.angle < zone3End
+                                    )
                                 {
                                     lock (zone3)
                                     {
@@ -169,7 +201,8 @@ namespace LD06_Driver
                 }
 
                 lidarReaderThread.Join();
-                cleanDataPoints.Join();
+                calculateZoneRangesThread.Join();
+                sendPointInfoThread.Join();
 
                 _serialPort.Close();
             }
@@ -179,6 +212,9 @@ namespace LD06_Driver
             }
         }
 
+        /// <summary>
+        /// Calculate ranges for 4 zones in fron of the lidar and report to UI once calculated
+        /// </summary>
         public static void calculateZoneRanges()
         {
             int KEEPING_LENGTH = 250;
@@ -195,7 +231,8 @@ namespace LD06_Driver
                         //remove point that sit longer than a second
                         zone1.RemoveAll(x => x.timestamp > lastpoint.timestamp || x.timestamp < lastpoint.timestamp - KEEPING_LENGTH);
                         var goodDistances = zone1.FindAll(x => x.confidence > MINIMAL_CONFIDENCE);
-                        zone1Distance = goodDistances.Count() > 0 ? goodDistances.Average(x => x.distance) : zone1Distance / 2; //if no distance data, devide previous oe by 2
+                        zone1Distance = goodDistances.Min(x => x.distance);
+                        //zone1Distance = goodDistances.Count() > 0 ? goodDistances.Average(x => x.distance) : zone1Distance / 2; //if no distance data, devide previous oe by 2
                     }
                 }
 
@@ -208,7 +245,8 @@ namespace LD06_Driver
                         //remove point that sit longer than a second
                         zone2.RemoveAll(x => x.timestamp > lastpoint.timestamp || x.timestamp < lastpoint.timestamp - KEEPING_LENGTH);
                         var goodDistances = zone2.FindAll(x => x.confidence > MINIMAL_CONFIDENCE);
-                        zone2Distance = goodDistances.Count() > 0 ? goodDistances.Average(x => x.distance) : zone2Distance / 2; //if no distance data, devide previous oe by 2
+                        zone2Distance = goodDistances.Min(x => x.distance);
+                        //zone2Distance = goodDistances.Count() > 0 ? goodDistances.Average(x => x.distance) : zone2Distance / 2; //if no distance data, devide previous oe by 2
                     }
                 }
 
@@ -221,7 +259,8 @@ namespace LD06_Driver
                         //remove point that sit longer than a second
                         zone3.RemoveAll(x => x.timestamp > lastpoint.timestamp || x.timestamp < lastpoint.timestamp - KEEPING_LENGTH);
                         var goodDistances = zone3.FindAll(x => x.confidence > MINIMAL_CONFIDENCE);
-                        zone3Distance = goodDistances.Count() > 0 ? goodDistances.Average(x => x.distance) : zone3Distance / 2; //if no distance data, devide previous oe by 2
+                        zone3Distance = goodDistances.Min(x => x.distance);
+                        //zone3Distance = goodDistances.Count() > 0 ? goodDistances.Average(x => x.distance) : zone3Distance / 2; //if no distance data, devide previous oe by 2
                     }
                 }
 
@@ -234,14 +273,44 @@ namespace LD06_Driver
                         //remove point that sit longer than a second
                         zone4.RemoveAll(x => x.timestamp > lastpoint.timestamp || x.timestamp < lastpoint.timestamp - KEEPING_LENGTH);
                         var goodDistances = zone4.FindAll(x => x.confidence > MINIMAL_CONFIDENCE);
-                        zone4Distance = goodDistances.Count() > 0 ? goodDistances.Average(x => x.distance) : zone4Distance / 2; //if no distance data, devide previous oe by 2
+                        zone4Distance = goodDistances.Min(x => x.distance);
+                        //zone4Distance = goodDistances.Count() > 0 ? goodDistances.Average(x => x.distance) : zone4Distance / 2; //if no distance data, devide previous oe by 2
                     }
                 }
 
+                if (_syncDataSocket != null && _syncDataSocket.isConnected())
+                {
 
-                Console.WriteLine(zone1Distance.ToString("0.##") + " " + zone2Distance.ToString("0.##") + " " + zone3Distance.ToString("0.##") + " " + zone4Distance.ToString("0.##"));
+                    _syncDataSocket.SendLine("RANGE_1::" + zone1Distance.ToString("0.##"));
+                    _syncDataSocket.SendLine("RANGE_2::" + zone2Distance.ToString("0.##"));
+                    _syncDataSocket.SendLine("RANGE_3::" + zone3Distance.ToString("0.##"));
+                    _syncDataSocket.SendLine("RANGE_4::" + zone4Distance.ToString("0.##"));
+                }
 
-                Task.Delay(300).Wait();
+                //Console.WriteLine(zone1Distance.ToString("0.##") + " " + zone2Distance.ToString("0.##") + " " + zone3Distance.ToString("0.##") + " " + zone4Distance.ToString("0.##"));
+
+                Task.Delay(100).Wait();
+            }
+        }
+
+        public static void sendPointInfo() {
+
+            while (true)
+            {
+                while (_pointDatasToSend.Count > 0)
+                {
+                    var point = _pointDatasToSend.Dequeue();
+                    if (point != null)
+                    {
+                        //only report angles from the needed range
+                        if (point.angle > _startAngle || point.angle < _endAngle)
+                        {
+                            _syncDataSocket.SendLine("POINT::" + JsonConvert.SerializeObject(point));
+                        }
+                    }
+                }
+
+                Task.Delay(10).Wait();
             }
         }
     } 
