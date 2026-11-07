@@ -2,14 +2,22 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>LD06_Driver</RootNamespace>
+    <Version>2.0.0</Version>
+    <!-- Raspberry Pi OS Lite has no guaranteed libicu, and this app has no culture-sensitive text. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" Version="2.8.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
-    <PackageReference Include="System.IO.Ports" Version="5.0.0" />
+    <Compile Include="*.cs" />
+    <InternalsVisibleTo Include="LD06_Driver.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" Version="2.9.1" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.14" />
   </ItemGroup>
 
 </Project>

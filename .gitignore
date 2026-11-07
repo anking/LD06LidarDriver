@@ -1,2 +1,6 @@
-bin
-obj
+bin/
+obj/
+out/
+publish/
+.vs/
+*.user

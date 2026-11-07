@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Unit tests
+        run: dotnet test --project LD06_Driver.Tests/LD06_Driver.Tests.csproj -c Release
+
+      - name: Build the Raspberry Pi targets
+        run: |
+          dotnet publish LD06_Driver.csproj -c Release --self-contained -r linux-arm64 -o out/linux-arm64
+          dotnet publish LD06_Driver.csproj -c Release --self-contained -r linux-arm -o out/linux-arm
